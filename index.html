@@ -52,6 +52,7 @@
       font-size: 25px;
       font-weight: bold;
       margin: 18px 0 10px;
+      overflow-wrap: anywhere;
     }
 
     .dot {
@@ -63,20 +64,10 @@
       background: #aaa;
     }
 
-    .online { color: #4ade80; }
-    .online .dot { background: #4ade80; }
-
-    .maintenance { color: #facc15; }
-    .maintenance .dot { background: #facc15; }
-
-    .private { color: #c084fc; }
-    .private .dot { background: #c084fc; }
-
-    .updating { color: #60a5fa; }
-    .updating .dot { background: #60a5fa; }
-
-    .unavailable { color: #f87171; }
-    .unavailable .dot { background: #f87171; }
+    .muted {
+      color: #8295b1;
+      font-size: 13px;
+    }
 
     .announcement {
       background: #0d1729;
@@ -93,9 +84,7 @@
       gap: 10px;
     }
 
-    .announcement-header strong {
-      font-size: 14px;
-    }
+    .announcement-header strong { font-size: 14px; }
 
     .announcement-header button {
       width: auto;
@@ -119,11 +108,6 @@
       overflow: hidden;
     }
 
-    .muted {
-      color: #8295b1;
-      font-size: 13px;
-    }
-
     input, textarea, select {
       display: block;
       width: 100%;
@@ -139,6 +123,12 @@
     textarea {
       min-height: 100px;
       resize: vertical;
+    }
+
+    input[type="color"] {
+      height: 48px;
+      padding: 5px;
+      cursor: pointer;
     }
 
     button {
@@ -173,11 +163,44 @@
 
     .hidden { display: none !important; }
 
+    .custom-editor {
+      border: 1px solid #304968;
+      background: #0d1729;
+      border-radius: 12px;
+      padding: 16px;
+      margin-top: 16px;
+    }
+
+    .custom-editor h3 {
+      margin-top: 0;
+      font-size: 16px;
+    }
+
+    .preview {
+      background: #080d18;
+      border: 1px solid #304968;
+      padding: 14px;
+      border-radius: 10px;
+      margin-top: 15px;
+    }
+
+    .preview-label {
+      color: #8295b1;
+      font-size: 11px;
+      margin-bottom: 10px;
+    }
+
     footer {
       text-align: center;
       color: #71839e;
       font-size: 12px;
       padding: 8px;
+    }
+
+    @media (max-width: 480px) {
+      .card { padding: 21px; }
+      h1 { font-size: 26px; }
+      .status { font-size: 22px; }
     }
   </style>
 </head>
@@ -190,7 +213,8 @@
       <p class="subtitle">Hello Neighbor | Official Game Status</p>
 
       <div id="status" class="status">
-        <span class="dot"></span>Loading...
+        <span id="status-dot" class="dot"></span>
+        <span id="status-label">Loading...</span>
       </div>
 
       <p id="description" class="muted">
@@ -225,6 +249,7 @@
       </div>
 
       <div id="admin-area" class="hidden">
+
         <p class="muted">You are logged in as an administrator.</p>
 
         <label for="new-status">Game status</label>
@@ -234,7 +259,54 @@
           <option value="private">Private</option>
           <option value="updating">Updating</option>
           <option value="unavailable">Temporarily Unavailable</option>
+          <option value="custom">Custom Status</option>
         </select>
+
+        <div id="custom-editor" class="custom-editor hidden">
+          <h3>Custom Status Editor</h3>
+
+          <label for="custom-name">Status name</label>
+          <input
+            id="custom-name"
+            type="text"
+            maxlength="50"
+            placeholder="Example: CONTENT UPDATE"
+          >
+
+          <label for="custom-description">Status description</label>
+          <textarea
+            id="custom-description"
+            maxlength="500"
+            placeholder="Write your custom status description..."
+          ></textarea>
+
+          <label for="custom-color">Status text color</label>
+          <input
+            id="custom-color"
+            type="color"
+            value="#38bdf8"
+          >
+
+          <label for="custom-indicator-color">Status indicator color</label>
+          <input
+            id="custom-indicator-color"
+            type="color"
+            value="#38bdf8"
+          >
+
+          <div class="preview">
+            <div class="preview-label">LIVE PREVIEW</div>
+
+            <div id="preview-status" class="status">
+              <span id="preview-dot" class="dot"></span>
+              <span id="preview-name">YOUR STATUS</span>
+            </div>
+
+            <p id="preview-description" class="muted">
+              Your custom description will appear here.
+            </p>
+          </div>
+        </div>
 
         <label for="new-announcement">Announcement</label>
         <textarea
@@ -274,24 +346,73 @@
       unavailable: "Temporarily Unavailable"
     };
 
-    let db = null;
+    const defaultColors = {
+      online: "#4ade80",
+      maintenance: "#facc15",
+      private: "#c084fc",
+      updating: "#60a5fa",
+      unavailable: "#f87171"
+    };
 
-    // Prevent automatic refreshes from overwriting unsaved edits.
+    let db = null;
     let editorDirty = false;
     let saving = false;
 
-    $("new-announcement").addEventListener("input", () => {
-      editorDirty = true;
+    const editorFields = [
+      "new-announcement",
+      "new-status",
+      "custom-name",
+      "custom-description",
+      "custom-color",
+      "custom-indicator-color"
+    ];
+
+    editorFields.forEach(id => {
+      $(id).addEventListener("input", () => {
+        editorDirty = true;
+        updateCustomEditor();
+      });
+
+      $(id).addEventListener("change", () => {
+        editorDirty = true;
+        updateCustomEditor();
+      });
     });
 
-    $("new-status").addEventListener("change", () => {
-      editorDirty = true;
-    });
+    function validColor(value, fallback) {
+      return /^#[0-9a-fA-F]{6}$/.test(value || "")
+        ? value
+        : fallback;
+    }
 
-    function showError(message) {
-      $("status").textContent = "Connection error";
-      $("description").textContent = message;
-      console.error("Neighbor Games error:", message);
+    function updateCustomEditor() {
+      const isCustom = $("new-status").value === "custom";
+
+      $("custom-editor").classList.toggle("hidden", !isCustom);
+
+      updatePreview();
+    }
+
+    function updatePreview() {
+      const name = $("custom-name").value.trim() || "YOUR STATUS";
+      const description =
+        $("custom-description").value.trim() ||
+        "Your custom description will appear here.";
+
+      const textColor = validColor(
+        $("custom-color").value,
+        "#38bdf8"
+      );
+
+      const dotColor = validColor(
+        $("custom-indicator-color").value,
+        "#38bdf8"
+      );
+
+      $("preview-name").textContent = name;
+      $("preview-description").textContent = description;
+      $("preview-name").style.color = textColor;
+      $("preview-dot").style.backgroundColor = dotColor;
     }
 
     function setEditorValues(data) {
@@ -299,18 +420,63 @@
 
       $("new-status").value = data.status || "online";
       $("new-announcement").value = data.announcement || "";
+
+      $("custom-name").value = data.custom_status || "";
+      $("custom-description").value = data.custom_description || "";
+
+      $("custom-color").value = validColor(
+        data.custom_color,
+        "#38bdf8"
+      );
+
+      $("custom-indicator-color").value = validColor(
+        data.custom_indicator_color,
+        "#38bdf8"
+      );
+
+      updateCustomEditor();
     }
 
     function displayStatus(data) {
       const status = data.status || "unavailable";
 
-      $("status").className = "status " + status;
-      $("status").innerHTML =
-        '<span class="dot"></span>' +
-        (labels[status] || status);
+      const statusLabel = $("status-label");
+      const statusDot = $("status-dot");
 
-      $("description").textContent =
-        descriptions[status] || "Status information unavailable.";
+      if (status === "custom") {
+        const customName =
+          data.custom_status || "Custom Status";
+
+        const customDescription =
+          data.custom_description || "Custom status is active.";
+
+        const textColor = validColor(
+          data.custom_color,
+          "#38bdf8"
+        );
+
+        const dotColor = validColor(
+          data.custom_indicator_color,
+          "#38bdf8"
+        );
+
+        statusLabel.textContent = customName;
+        statusLabel.style.color = textColor;
+        statusDot.style.backgroundColor = dotColor;
+
+        $("description").textContent = customDescription;
+
+      } else {
+        statusLabel.textContent = labels[status] || status;
+        statusLabel.style.color =
+          defaultColors[status] || "#ffffff";
+
+        statusDot.style.backgroundColor =
+          defaultColors[status] || "#aaaaaa";
+
+        $("description").textContent =
+          descriptions[status] || "Status information unavailable.";
+      }
 
       $("announcement").textContent =
         data.announcement || "No announcements at this time.";
@@ -350,7 +516,7 @@
 
       const { data, error } = await db
         .from("game_status")
-        .select("id,status,announcement,updated_at")
+        .select("*")
         .eq("id", 1)
         .maybeSingle();
 
@@ -365,6 +531,13 @@
       }
 
       displayStatus(data);
+    }
+
+    function showError(message) {
+      $("status-label").textContent = "Connection error";
+      $("status-label").style.color = "#f87171";
+      $("description").textContent = message;
+      console.error("Neighbor Games error:", message);
     }
 
     async function checkAdmin() {
@@ -406,11 +579,10 @@
       $("login-area").classList.add("hidden");
       $("admin-area").classList.remove("hidden");
 
-      // Load the latest saved editor values after authentication.
       if (!editorDirty) {
         const { data: statusData, error: statusError } = await db
           .from("game_status")
-          .select("status,announcement")
+          .select("*")
           .eq("id", 1)
           .maybeSingle();
 
@@ -459,6 +631,7 @@
       if (saving) return;
 
       saving = true;
+
       $("save-button").disabled = true;
       $("save-button").textContent = "Saving...";
       $("admin-message").className = "error";
@@ -467,12 +640,38 @@
       const status = $("new-status").value;
       const announcement = $("new-announcement").value;
 
+      const customName = $("custom-name").value.trim();
+      const customDescription = $("custom-description").value.trim();
+
+      const customColor = validColor(
+        $("custom-color").value,
+        "#38bdf8"
+      );
+
+      const customIndicatorColor = validColor(
+        $("custom-indicator-color").value,
+        "#38bdf8"
+      );
+
+      if (status === "custom" && !customName) {
+        $("admin-message").textContent =
+          "Please enter a name for your custom status.";
+        saving = false;
+        $("save-button").disabled = false;
+        $("save-button").textContent = "Save Changes";
+        return;
+      }
+
       try {
         const { data, error } = await db
           .from("game_status")
           .update({
             status,
             announcement,
+            custom_status: customName,
+            custom_description: customDescription,
+            custom_color: customColor,
+            custom_indicator_color: customIndicatorColor,
             updated_at: new Date().toISOString()
           })
           .eq("id", 1)
@@ -491,9 +690,7 @@
           return;
         }
 
-        // Only clear the unsaved-edit protection after a successful save.
         editorDirty = false;
-
         displayStatus(data);
 
         $("admin-message").className = "success";
@@ -550,13 +747,23 @@
           checkAdmin();
         });
 
-        // Refresh public information without overwriting unsaved edits.
         setInterval(loadStatus, 30000);
 
       } catch (error) {
         showError(error.message || "Unknown initialization error.");
       }
     }
+
+    $("new-status").addEventListener("change", updateCustomEditor);
+
+    [
+      "custom-name",
+      "custom-description",
+      "custom-color",
+      "custom-indicator-color"
+    ].forEach(id => {
+      $(id).addEventListener("input", updatePreview);
+    });
 
     $("login-button").addEventListener("click", login);
     $("save-button").addEventListener("click", saveStatus);
