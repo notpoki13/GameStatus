@@ -78,7 +78,6 @@
     .unavailable { color: #f87171; }
     .unavailable .dot { background: #f87171; }
 
-    /* Compact announcement panel */
     .announcement {
       background: #0d1729;
       border: 1px solid #263b57;
@@ -156,8 +155,12 @@
     }
 
     button:hover { background: #5090ed; }
-
     button.secondary { background: #34445c; }
+
+    button:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
 
     .error {
       color: #fca5a5;
@@ -166,7 +169,9 @@
       font-size: 13px;
     }
 
-    .hidden { display: none; }
+    .success { color: #4ade80; }
+
+    .hidden { display: none !important; }
 
     footer {
       text-align: center;
@@ -232,8 +237,10 @@
         </select>
 
         <label for="new-announcement">Announcement</label>
-        <textarea id="new-announcement"
-          placeholder="Write a game announcement..."></textarea>
+        <textarea
+          id="new-announcement"
+          placeholder="Write a game announcement..."
+        ></textarea>
 
         <button id="save-button">Save Changes</button>
         <button id="logout-button" class="secondary">Log Out</button>
@@ -269,10 +276,29 @@
 
     let db = null;
 
+    // Prevent automatic refreshes from overwriting unsaved edits.
+    let editorDirty = false;
+    let saving = false;
+
+    $("new-announcement").addEventListener("input", () => {
+      editorDirty = true;
+    });
+
+    $("new-status").addEventListener("change", () => {
+      editorDirty = true;
+    });
+
     function showError(message) {
       $("status").textContent = "Connection error";
       $("description").textContent = message;
-      console.error("Neighbor Games status error:", message);
+      console.error("Neighbor Games error:", message);
+    }
+
+    function setEditorValues(data) {
+      if (editorDirty || saving) return;
+
+      $("new-status").value = data.status || "online";
+      $("new-announcement").value = data.announcement || "";
     }
 
     function displayStatus(data) {
@@ -293,9 +319,7 @@
         ? new Date(data.updated_at).toLocaleString()
         : "Not available";
 
-      $("new-status").value = status;
-      $("new-announcement").value = data.announcement || "";
-
+      setEditorValues(data);
       updateAnnouncementButton();
     }
 
@@ -317,9 +341,7 @@
     }
 
     $("announcement-toggle").addEventListener("click", () => {
-      const text = $("announcement");
-
-      text.classList.toggle("collapsed");
+      $("announcement").classList.toggle("collapsed");
       updateAnnouncementButton();
     });
 
@@ -357,6 +379,7 @@
       if (!session) {
         $("login-area").classList.remove("hidden");
         $("admin-area").classList.add("hidden");
+        editorDirty = false;
         return;
       }
 
@@ -382,6 +405,19 @@
       $("admin-message").textContent = "";
       $("login-area").classList.add("hidden");
       $("admin-area").classList.remove("hidden");
+
+      // Load the latest saved editor values after authentication.
+      if (!editorDirty) {
+        const { data: statusData, error: statusError } = await db
+          .from("game_status")
+          .select("status,announcement")
+          .eq("id", 1)
+          .maybeSingle();
+
+        if (!statusError && statusData) {
+          setEditorValues(statusData);
+        }
+      }
     }
 
     async function login() {
@@ -396,52 +432,83 @@
         return;
       }
 
-      const { error } = await db.auth.signInWithPassword({
-        email,
-        password
-      });
+      $("login-button").disabled = true;
+      $("login-button").textContent = "Logging in...";
 
-      if (error) {
-        $("admin-message").textContent = error.message;
-        return;
+      try {
+        const { error } = await db.auth.signInWithPassword({
+          email,
+          password
+        });
+
+        if (error) {
+          $("admin-message").textContent = error.message;
+          return;
+        }
+
+        editorDirty = false;
+        await checkAdmin();
+
+      } finally {
+        $("login-button").disabled = false;
+        $("login-button").textContent = "Log In";
       }
-
-      await checkAdmin();
     }
 
     async function saveStatus() {
-      $("admin-message").textContent = "Saving...";
+      if (saving) return;
+
+      saving = true;
+      $("save-button").disabled = true;
+      $("save-button").textContent = "Saving...";
+      $("admin-message").className = "error";
+      $("admin-message").textContent = "";
 
       const status = $("new-status").value;
       const announcement = $("new-announcement").value;
 
-      const { data, error } = await db
-        .from("game_status")
-        .update({
-          status,
-          announcement,
-          updated_at: new Date().toISOString()
-        })
-        .eq("id", 1)
-        .select()
-        .maybeSingle();
+      try {
+        const { data, error } = await db
+          .from("game_status")
+          .update({
+            status,
+            announcement,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", 1)
+          .select()
+          .maybeSingle();
 
-      if (error) {
+        if (error) {
+          $("admin-message").textContent =
+            "Save failed: " + error.message;
+          return;
+        }
+
+        if (!data) {
+          $("admin-message").textContent =
+            "No row updated. Check your admin permissions.";
+          return;
+        }
+
+        // Only clear the unsaved-edit protection after a successful save.
+        editorDirty = false;
+
+        displayStatus(data);
+
+        $("admin-message").className = "success";
         $("admin-message").textContent =
-          "Save failed: " + error.message;
-        return;
-      }
+          "Changes saved successfully!";
 
-      if (!data) {
+      } catch (error) {
         $("admin-message").textContent =
-          "No row updated. Check your admin permissions.";
-        return;
+          "Unexpected error: " + error.message;
+
+      } finally {
+        saving = false;
+        $("save-button").disabled = false;
+        $("save-button").textContent = "Save Changes";
       }
-
-      $("admin-message").textContent =
-        "Changes saved successfully!";
-
-      displayStatus(data);
     }
 
     async function logout() {
@@ -452,6 +519,7 @@
         return;
       }
 
+      editorDirty = false;
       $("admin-message").textContent = "";
       await checkAdmin();
     }
@@ -482,6 +550,7 @@
           checkAdmin();
         });
 
+        // Refresh public information without overwriting unsaved edits.
         setInterval(loadStatus, 30000);
 
       } catch (error) {
