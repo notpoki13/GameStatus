@@ -41,7 +41,6 @@
     }
 
     h1, h2 { margin-top: 0; }
-
     h1 { font-size: 30px; }
 
     .subtitle {
@@ -79,14 +78,46 @@
     .unavailable { color: #f87171; }
     .unavailable .dot { background: #f87171; }
 
+    /* Compact announcement panel */
     .announcement {
       background: #0d1729;
+      border: 1px solid #263b57;
       border-radius: 10px;
-      padding: 15px;
-      margin-top: 20px;
+      padding: 12px 15px;
+      margin-top: 18px;
+    }
+
+    .announcement-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .announcement-header strong {
+      font-size: 14px;
+    }
+
+    .announcement-header button {
+      width: auto;
+      margin: 0;
+      padding: 7px 10px;
+      font-size: 12px;
+    }
+
+    .announcement-text {
       color: #d6e2f3;
       white-space: pre-wrap;
       overflow-wrap: anywhere;
+      margin: 12px 0 0;
+      line-height: 1.5;
+    }
+
+    .announcement-text.collapsed {
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
     }
 
     .muted {
@@ -126,9 +157,7 @@
 
     button:hover { background: #5090ed; }
 
-    button.secondary {
-      background: #34445c;
-    }
+    button.secondary { background: #34445c; }
 
     .error {
       color: #fca5a5;
@@ -164,8 +193,16 @@
       </p>
 
       <div class="announcement">
-        <strong>Announcement</strong>
-        <p id="announcement">Loading announcement...</p>
+        <div class="announcement-header">
+          <strong>Announcement</strong>
+          <button id="announcement-toggle" type="button">
+            Read more +
+          </button>
+        </div>
+
+        <p id="announcement" class="announcement-text collapsed">
+          Loading announcement...
+        </p>
       </div>
 
       <p class="muted">
@@ -258,7 +295,33 @@
 
       $("new-status").value = status;
       $("new-announcement").value = data.announcement || "";
+
+      updateAnnouncementButton();
     }
+
+    function updateAnnouncementButton() {
+      const text = $("announcement");
+      const button = $("announcement-toggle");
+
+      const isLong = text.scrollHeight > text.clientHeight + 2;
+
+      if (text.classList.contains("collapsed") && !isLong) {
+        button.classList.add("hidden");
+      } else {
+        button.classList.remove("hidden");
+      }
+
+      button.textContent = text.classList.contains("collapsed")
+        ? "Read more +"
+        : "Show less −";
+    }
+
+    $("announcement-toggle").addEventListener("click", () => {
+      const text = $("announcement");
+
+      text.classList.toggle("collapsed");
+      updateAnnouncementButton();
+    });
 
     async function loadStatus() {
       if (!db) return;
@@ -375,7 +438,9 @@
         return;
       }
 
-      $("admin-message").textContent = "Changes saved successfully!";
+      $("admin-message").textContent =
+        "Changes saved successfully!";
+
       displayStatus(data);
     }
 
