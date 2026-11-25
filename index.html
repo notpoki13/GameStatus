@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hello Neighbor | Neighbor Games</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{
+  margin:0;background:#080d1b;color:#edf3ff;
+  font-family:Arial, sans-serif;
+}
+header{
+  max-width:900px;margin:auto;padding:25px;
+  display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid #25334b;
+}
+.brand{font-weight:900;letter-spacing:2px}
+.brand span{color:#75a9ff}
+.live{font-size:11px;color:#9eafc7}
+.live i{display:inline-block;width:7px;height:7px;
+  border-radius:50%;background:#55d99a;margin-right:7px}
+main{max-width:700px;margin:65px auto;padding:0 20px}
+.hero{text-align:center;margin-bottom:35px}
+.eyebrow{color:#80adff;font-size:11px;letter-spacing:2px}
+h1{font-size:clamp(38px,8vw,58px);margin:12px 0}
+h1 span{color:#75a9ff}
+.subtitle{color:#91a2bd;line-height:1.6}
+.card{
+  background:#111c30;border:1px solid #293a56;
+  border-radius:18px;padding:26px;margin-bottom:18px;
+}
+.top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.small{font-size:10px;letter-spacing:1.5px;color:#8ea4c3}
+#updated{font-size:10px;color:#8192aa}
+.status{display:flex;align-items:center;gap:18px;margin:30px 0}
+.symbol{
+  width:60px;height:60px;border-radius:16px;
+  display:grid;place-items:center;font-size:27px;
+  background:#1c304d;color:#80adff;
+}
+h2{font-size:25px;margin:0 0 7px}
+#description{color:#9cacc4;font-size:13px;margin:0;line-height:1.5}
+hr{border:0;border-top:1px solid #293a56}
+.announcement{font-size:14px;line-height:1.7;white-space:pre-wrap}
+.admin h3{margin:8px 0 18px}
+label{display:block;font-size:12px;color:#b6c6dd;margin:15px 0 7px}
+input,select,textarea{
+  width:100%;padding:13px;border-radius:9px;
+  border:1px solid #30415f;background:#091426;
+  color:white;font:14px Arial;outline:none;
+}
+textarea{resize:vertical}
+button{
+  border:0;border-radius:9px;padding:13px 17px;
+  cursor:pointer;font-weight:bold;
+}
+.primary{background:#4c8df5;color:white;width:100%;margin-top:16px}
+.secondary{background:#263750;color:#dbe8ff}
+button:disabled{opacity:.5;cursor:wait}
+#editor{display:none}
+#login{display:block}
+#message{font-size:12px;color:#83dcb1;min-height:16px}
+#logout{float:right}
+footer{
+  max-width:700px;margin:35px auto;padding:20px;
+  color:#657791;font-size:11px;text-align:center;
+}
+.warning{color:#ffcc80;font-size:12px;line-height:1.6}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">NEIGHBOR <span>GAMES</span></div>
+  <div class="live"><i></i> GAME STATUS</div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="eyebrow">OFFICIAL GAME STATUS</div>
+    <h1>Hello Neighbor<span>.</span></h1>
+    <p class="subtitle">The latest news and availability updates from Neighbor Games.</p>
+  </section>
+
+  <section class="card">
+    <div class="top">
+      <span class="small">CURRENT STATUS</span>
+      <span id="updated">Loading status...</span>
+    </div>
+    <div class="status">
+      <div class="symbol" id="symbol">…</div>
+      <div>
+        <h2 id="status">Connecting...</h2>
+        <p id="description">Loading game status.</p>
+      </div>
+    </div>
+    <hr>
+    <p class="small">LATEST ANNOUNCEMENT</p>
+    <p class="announcement" id="announcement">Loading announcement...</p>
+  </section>
+
+  <section class="card admin">
+    <div class="eyebrow">PRIVATE CONTROL CENTER</div>
+    <h3>Administrator panel</h3>
+
+    <div id="login">
+      <p class="subtitle">Sign in to change the game's public status.</p>
+      <form id="loginForm">
+        <label>Email</label>
+        <input id="email" type="email" required autocomplete="username">
+        <label>Password</label>
+        <input id="password" type="password" required autocomplete="current-password">
+        <button class="primary" type="submit">Sign in</button>
+      </form>
+    </div>
+
+    <div id="editor">
+      <button class="secondary" id="logout">Sign out</button>
+      <p class="subtitle">Signed in as <span id="who"></span></p>
+      <form id="updateForm">
+        <label>Game status</label>
+        <select id="newStatus">
+          <option value="online">Online</option>
+          <option value="maintenance">Under Maintenance</option>
+          <option value="private">Private</option>
+          <option value="updating">Updating</option>
+          <option value="unavailable">Temporarily Unavailable</option>
+        </select>
+        <label>Announcement</label>
+        <textarea id="newAnnouncement" rows="4" maxlength="500"
+          placeholder="Write an announcement for players..."></textarea>
+        <button class="primary" type="submit">Publish status</button>
+        <p id="message"></p>
+      </form>
+    </div>
+    <p id="setupWarning" class="warning" hidden>
+      Website setup is incomplete. Check config.js and the Supabase setup instructions.
+    </p>
+  </section>
+</main>
+
+<footer>© <span id="year"></span> Neighbor Games · Hello Neighbor</footer>
+
+<script src="config.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+$("year").textContent = new Date().getFullYear();
+
+const states = {
+  online:["Online","The game is available to play.","✓","#55d99a"],
+  maintenance:["Under Maintenance","The game is temporarily unavailable while maintenance is underway.","⚒","#ffc36e"],
+  private:["Private","The game is currently private.","⌑","#b49aff"],
+  updating:["Updating","An update is being prepared. Check back soon.","↻","#80b4ff"],
+  unavailable:["Temporarily Unavailable","The game is currently unavailable.","!","#ff8585"]
+};
+
+function displayStatus(row){
+  const s=states[row.status] || states.unavailable;
+  $("status").textContent=s[0];
+  $("description").textContent=s[1];
+  $("symbol").textContent=s[2];
+  $("symbol").style.color=s[3];
+  $("announcement").textContent=row.announcement || "No announcements right now.";
+  $("updated").textContent="Updated: "+new Date(row.updated_at).toLocaleString();
+  $("newStatus").value=row.status;
+  $("newAnnouncement").value=row.announcement || "";
+}
+
+const cfg=window.APP_CONFIG || {};
+if(!cfg.url || !cfg.key || cfg.url.includes("YOUR_") || cfg.key.includes("YOUR_")){
+  $("setupWarning").hidden=false;
+  $("status").textContent="Setup required";
+  $("description").textContent="Connect the status database to publish updates.";
+  $("announcement").textContent="Follow the setup instructions in the README.";
+}else{
+  const db=window.supabase.createClient(cfg.url,cfg.key);
+  let currentUser=null;
+
+  async function load(){
+    const {data,error}=await db.from("game_status")
+      .select("*").eq("id",1).maybeSingle();
+    if(error){
+      $("status").textContent="Connection error";
+      $("description").textContent="Check the database configuration.";
+      return;
+    }
+    if(data)displayStatus(data);
+  }
+
+  async function authState(){
+    const {data:{session}}=await db.auth.getSession();
+    currentUser=session?.user || null;
+    $("login").style.display=currentUser?"none":"block";
+    $("editor").style.display=currentUser?"block":"none";
+    if(currentUser)$("who").textContent=currentUser.email;
+  }
+
+  $("loginForm").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const btn=e.submitter;
+    btn.disabled=true;btn.textContent="Signing in...";
+    const {error}=await db.auth.signInWithPassword({
+      email:$("email").value.trim(),
+      password:$("password").value
+    });
+    btn.disabled=false;btn.textContent="Sign in";
+    if(error)alert("Login failed: "+error.message);
+    else await authState();
+  });
+
+  $("logout").addEventListener("click",async()=>{
+    await db.auth.signOut();
+    await authState();
+  });
+
+  $("updateForm").addEventListener("submit",async e=>{
+    e.preventDefault();
+    const btn=e.submitter;
+    btn.disabled=true;btn.textContent="Publishing...";
+    $("message").textContent="";
+    const {data,error}=await db.from("game_status").update({
+      status:$("newStatus").value,
+      announcement:$("newAnnouncement").value.trim(),
+      updated_at:new Date().toISOString()
+    }).eq("id",1).select().single();
+
+    btn.disabled=false;btn.textContent="Publish status";
+    if(error){
+      $("message").style.color="#ff9999";
+      $("message").textContent="Couldn't publish. Check your admin permissions.";
+    }else{
+      displayStatus(data);
+      $("message").style.color="#83dcb1";
+      $("message").textContent="Status published successfully!";
+    }
+  });
+
+  db.auth.onAuthStateChange(()=>authState());
+  load();
+  authState();
+  setInterval(load,15000);
+}
+</script>
+</body>
+</html>
